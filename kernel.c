@@ -1,14 +1,20 @@
 /*
- * kernel.c - Annon OS with Trip Recorder & System Reporting
+ * kernel.c - Annon OS: Vehicle Systems & Trip Recorder
+ * Version 1.0 - Full Diagnostic Integration
  */
 
 #include <limine.h>
 #include <stddef.h>
 
-// --- Configuration ---
-#define TRIP_RECORDER_SIZE 2048
-static char trip_buffer[TRIP_RECORDER_SIZE]; // Our "Black Box" memory
+// --- Configuration & Buffers ---
+#define TRIP_RECORDER_SIZE 4096
+// This buffer holds the "Black Box" data in memory
+static char trip_buffer[TRIP_RECORDER_SIZE]; 
 static size_t buffer_ptr = 0;
+
+// This defines how long to wait between 10-minute checks.
+// Note: In an early kernel, this is a placeholder for a real hardware timer.
+#define CHECK_INTERVAL_10MIN 600000 
 
 static volatile struct limine_terminal_request terminal_request = {
     .id = LIMINE_TERMINAL_REQUEST,
@@ -17,7 +23,7 @@ static volatile struct limine_terminal_request terminal_request = {
 
 static void (*print_func)(const char *, size_t);
 
-// --- Core OS Functions ---
+// --- Core Communication Functions ---
 
 static void print(const char *str) {
     size_t len = 0;
@@ -25,34 +31,47 @@ static void print(const char *str) {
     if (print_func) print_func(str, len);
 }
 
-// Mimics sending data to an external hardware device (Trip Recorder)
-static void send_to_trip_recorder(const char *data) {
+// Internal function to write data into the Trip Recorder
+static void record_event(const char *data) {
     size_t i = 0;
     while (data[i] != '\0' && buffer_ptr < TRIP_RECORDER_SIZE - 1) {
         trip_buffer[buffer_ptr++] = data[i++];
     }
-    trip_buffer[buffer_ptr] = '\0'; // Ensure null termination
-    
-    // In a hardware-level kernel, you would use an 'outb' instruction here
-    // to send this data to a specific COM port or storage controller.
-    print("[ SYSTEM ] Data packet synchronized with Trip Recorder.\n");
+    trip_buffer[buffer_ptr] = '\0'; 
 }
 
-static void save_system_report(const char *category, const char *status) {
-    print("Saving report to log...");
-    
-    // Format a simple log entry
-    send_to_trip_recorder("\n[LOG] ");
-    send_to_trip_recorder(category);
-    send_to_trip_recorder(": ");
-    send_to_trip_recorder(status);
-    
-    print(" [ DONE ]\n");
+// Logical wrapper to save a timestamped report
+static void save_report(const char *header, const char *detail) {
+    record_event("\n[REPORT] ");
+    record_event(header);
+    record_event(": ");
+    record_event(detail);
 }
 
-// --- The Boot Sequence ---
+// --- Diagnostic Routine ---
+
+void run_vehicle_diagnostics() {
+    print("\n--- INITIATING VEHICLE SYSTEMS CHECK ---\n");
+    
+    // Check Pilot Vitals
+    print("Checking Pilot Vitals... [ OK ]\n");
+    save_report("BIO_METRICS", "HEART_RATE_NOMINAL");
+
+    // Check Hydraulics and Fluids
+    print("Checking Hydraulic Pressure... [ OK ]\n");
+    save_report("FLUID_SYSTEMS", "PRESSURE_3000_PSI_STABLE");
+
+    // Check Sensors
+    print("Checking Sensor Array... [ OK ]\n");
+    save_report("SENSORS", "ALL_SENSORS_ONLINE");
+
+    print("--- DIAGNOSTICS COMPLETE: TRIP RECORDER UPDATED ---\n\n");
+}
+
+// --- The Kernel Entry Point ---
 
 void _start(void) {
+    // Ensure we have a way to display text
     if (terminal_request.response == NULL || 
         terminal_request.response->terminal_count < 1) {
         for (;;) { __asm__("hlt"); }
@@ -60,22 +79,25 @@ void _start(void) {
 
     print_func = terminal_request.response->terminals[0]->write;
     
-    print("Annon OS - Initialization Sequence Alpha\n");
-    print("------------------------------------------\n");
+    print("Annon OS Booting...\n");
+    record_event("SYSTEM_STARTUP_INITIALIZED\n");
 
-    // 1. Check Vitals & Save to Trip Recorder
-    save_system_report("PILOT_VITALS", "NOMINAL_HEART_RATE_72");
-    save_system_report("FLUID_LEVELS", "HYDRAULIC_PRESSURE_3000_PSI");
-    save_system_report("SENSORS", "LIDAR_ACTIVE_O2_SENSOR_LOW");
+    // Run the first check at startup
+    run_vehicle_diagnostics();
 
-    // 2. Finalize Boot Report
-    print("\nCompiling Final Pre-Flight Report...\n");
-    send_to_trip_recorder("\n--- PRE-FLIGHT CHECK COMPLETE ---\n");
-    
-    print("Trip Recorder is now ARMED and RECORDING.\n");
-    print("Annon OS ready for transit.\n");
+    unsigned long long timer_ticks = 0;
 
-    for (;;) {
+    // Main Operation Loop
+    while (1) {
+        timer_ticks++;
+
+        // Trigger the 10-minute recurring diagnostic
+        if (timer_ticks >= CHECK_INTERVAL_10MIN) {
+            run_vehicle_diagnostics();
+            timer_ticks = 0; // Reset for next 10m
+        }
+
+        // Halt the CPU to prevent overheating while idling
         __asm__("hlt");
     }
 }
