@@ -1,0 +1,28 @@
+/*
+ * linker.ld - Annon OS Optimized Linker Script
+ */
+
+ENTRY(_start)
+
+SECTIONS {
+    /* Higher-half kernel base address */
+    . = 0xffffffff80000000;
+
+    /* Aligning sections to 4K ensures stable memory access for sensors */
+    .text : ALIGN(4K) {
+        *(.text)
+    }
+
+    .rodata : ALIGN(4K) {
+        *(.rodata)
+    }
+
+    .data : ALIGN(4K) {
+        *(.data)
+    }
+
+    .bss : ALIGN(4K) {
+        *(.bss)
+        *(COMMON)
+    }
+}
